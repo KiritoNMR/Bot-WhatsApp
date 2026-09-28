@@ -240,13 +240,23 @@ async function startBot() {
         try {
           await sock.sendPresenceUpdate('composing', from);
           const prompt = encodeURIComponent('Responde en español, de forma breve y amable (máximo 4 líneas). Pregunta: ' + pregunta);
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 60000);
-          const res = await fetch('https://text.pollinations.ai/' + prompt + '?model=openai', { signal: ctrl.signal });
-          clearTimeout(timer);
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          const respuesta = extraerTextoIA(await res.text());
-          reply = respuesta ? '🤖 ' + respuesta : '😅 La IA no me respondió, intenta de nuevo.';
+          let respuesta = '';
+          let ok = false;
+          for (let intento = 0; intento < 2 && !ok; intento++) {
+            try {
+              const ctrl = new AbortController();
+              const timer = setTimeout(() => ctrl.abort(), 60000);
+              const res = await fetch('https://text.pollinations.ai/' + prompt + '?model=openai', { signal: ctrl.signal });
+              clearTimeout(timer);
+              if (!res.ok) throw new Error('HTTP ' + res.status);
+              respuesta = extraerTextoIA(await res.text());
+              ok = true;
+            } catch (e) {
+              console.log(`⚠️ Error con la IA (intento ${intento + 1}):`, e.message);
+              if (intento === 0) await sleep(3000);
+            }
+          }
+          reply = ok && respuesta ? '🤖 ' + respuesta : '😅 No pude contactar a la IA ahora mismo, intenta en un momento.';
         } catch (e) {
           console.log('⚠️ Error con la IA:', e.message);
           reply = '😅 No pude contactar a la IA ahora mismo, intenta en un momento.';
