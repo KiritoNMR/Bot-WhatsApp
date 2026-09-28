@@ -208,6 +208,10 @@ function horaEn(tz) {
 // Chats esperando que les digan un país (jid -> expiración)
 const esperandoPais = new Map();
 
+// ---- Bienvenida a nuevos miembros ----
+const GRUPO_BIENVENIDA = 'General'; // nombre del grupo donde dar la bienvenida (grupo General de la comunidad RedLegion)
+let nombresGrupos = {}; // id del grupo -> nombre (se llena al conectar)
+
 // Restaurar sesión desde SESSION_B64 si existe (sobrevive reinicios del servidor)
 function restoreSession() {
   if (!SESSION_B64) return;
@@ -298,6 +302,12 @@ async function startBot() {
     if (connection === 'open') {
       clearTimeout(watchdog);
       console.log('✅ ¡Bot conectado a WhatsApp!');
+      // Listar grupos para saber sus nombres/ids
+      try {
+        const todos = await sock.groupFetchAllParticipating();
+        for (const [gid, g] of Object.entries(todos)) nombresGrupos[gid] = g.subject;
+        console.log(`📋 Grupos detectados: ${Object.keys(nombresGrupos).length}`);
+      } catch (e) { console.log('⚠️ No se pudieron listar los grupos:', e.message); }
       // Mostrar respaldo de sesión para sobrevivir reinicios
       const backup = backupSession();
       if (backup) {
@@ -327,6 +337,8 @@ async function startBot() {
     // Responde a mensajes de otros, y a los tuyos solo en tu chat personal ("Tú")
     const isSelfChat = !!(msg.key.fromMe && sock.user && from === sock.user.id);
     if (msg.key.fromMe && !isSelfChat) return;
+    // En el grupo de bienvenida los comandos están desactivados (solo bienvenida)
+    if (from.endsWith('@g.us') && nombresGrupos[from] === GRUPO_BIENVENIDA) return;
     const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').toLowerCase().trim();
     console.log(`💬 Mensaje de ${from}: ${text}`);
     if (!text) return;
@@ -358,6 +370,22 @@ async function startBot() {
     }
 
     if (reply) await sock.sendMessage(from, { text: reply });
+  });
+
+  // Dar la bienvenida cuando alguien se une al grupo
+  sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
+    try {
+      if (action !== 'add') return;
+      if (nombresGrupos[id] !== GRUPO_BIENVENIDA) return;
+      for (const p of participants) {
+        const tag = p.split('@')[0];
+        await sock.sendMessage(id, {
+          text: `🔥 ¡Bienvenido/a a la Red Legión, @${tag}! Espero que la pases bien en esta comunidad 🎮 Si tienes alguna duda pregunta sin pena, aquí nos ayudamos entre todos.`,
+          mentions: [p],
+        });
+        console.log(`👋 Bienvenida enviada a ${tag}`);
+      }
+    } catch (e) { console.log('⚠️ Error en bienvenida:', e.message); }
   });
 }
 
