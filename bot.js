@@ -10,6 +10,7 @@ const SESSION_B64 = (process.env.SESSION_B64 || '').trim();    // respaldo de se
 // -----------------------------------------------------------------------
 
 const AUTH_DIR = 'auth';
+const TIMEZONE = 'America/Havana'; // hora local
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Restaurar sesión desde SESSION_B64 si existe (sobrevive reinicios del servidor)
@@ -126,16 +127,19 @@ async function startBot() {
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
-    if (!msg.message || msg.key.fromMe) return;
+    if (!msg.message) return;
     const from = msg.key.remoteJid;
+    // Responde a mensajes de otros, y a los tuyos solo en tu chat personal ("Tú")
+    const isSelfChat = !!(msg.key.fromMe && sock.user && from === sock.user.id);
+    if (msg.key.fromMe && !isSelfChat) return;
     const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').toLowerCase().trim();
     console.log(`💬 Mensaje de ${from}: ${text}`);
     if (!text) return;
 
     let reply = null;
-    if (text === 'hola') reply = '👋 ¡Hola! Soy tu bot. Escribe *ayuda* para ver qué puedo hacer.';
-    else if (text === 'ayuda') reply = '📋 Comandos:\n• *hola* - Saludar\n• *hora* - Ver la hora\n• *ayuda* - Este mensaje';
-    else if (text === 'hora') reply = `🕐 Son las ${new Date().toLocaleTimeString('es-ES')}`;
+    if (text === '/hola') reply = '👋 ¡Hola! Soy tu bot. Escribe */ayuda* para ver qué puedo hacer.';
+    else if (text === '/ayuda') reply = '📋 Comandos:\n• */hola* - Saludar\n• */hora* - Ver la hora\n• */ayuda* - Este mensaje';
+    else if (text === '/hora') reply = `🕐 Son las ${new Date().toLocaleTimeString('es-ES', { timeZone: TIMEZONE })}`;
 
     if (reply) await sock.sendMessage(from, { text: reply });
   });
