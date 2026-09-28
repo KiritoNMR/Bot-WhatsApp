@@ -347,7 +347,27 @@ async function startBot() {
     if (text === '/hola') {
       reply = '👋 ¡Hola! Soy Kaneki. Escribe */ayuda* para ver qué puedo hacer.';
     } else if (text === '/ayuda') {
-      reply = '📋 Comandos:\n• */hola* - Saludar\n• */hora* - Te pregunta de qué país quieres la hora\n• */ayuda* - Este mensaje';
+      reply = '📋 Comandos:\n• */hola* - Saludar\n• */hora* - Te pregunta de qué país quieres la hora\n• */ia <pregunta>* - Pregúntame lo que quieras\n• */ayuda* - Este mensaje';
+    } else if (text === '/ia' || text.startsWith('/ia ')) {
+      const pregunta = text.slice(3).trim();
+      if (!pregunta) {
+        reply = '🤖 Escríbeme una pregunta, por ejemplo:\n*/ia ¿cuál es la capital de Japón?*';
+      } else {
+        try {
+          await sock.sendPresenceUpdate('composing', from);
+          const prompt = encodeURIComponent('Responde en español, de forma breve y amable (máximo 4 líneas). Pregunta: ' + pregunta);
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 60000);
+          const res = await fetch('https://text.pollinations.ai/' + prompt, { signal: ctrl.signal });
+          clearTimeout(timer);
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const respuesta = (await res.text()).trim();
+          reply = respuesta ? '🤖 ' + respuesta : '😅 La IA no me respondió, intenta de nuevo.';
+        } catch (e) {
+          console.log('⚠️ Error con la IA:', e.message);
+          reply = '😅 No pude contactar a la IA ahora mismo, intenta en un momento.';
+        }
+      }
     } else if (text === '/hora') {
       esperandoPais.set(from, Date.now() + 60000);
       reply = '🌍 ¿De qué país quieres saber la hora? Escríbelo así: */mexico*, */argentina*, */espana*...';
