@@ -12,6 +12,28 @@ const SESSION_B64 = (process.env.SESSION_B64 || '').trim();    // respaldo de se
 const AUTH_DIR = 'auth';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Extrae el texto de respuesta aunque la IA devuelva JSON crudo
+function extraerTextoIA(t) {
+  const s = t.trim();
+  if (s.startsWith('{')) {
+    try {
+      const j = JSON.parse(s);
+      const c = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+      if (c) return String(c).trim();
+      for (const k of ['content', 'text', 'answer', 'response', 'message', 'result']) {
+        if (typeof j[k] === 'string' && j[k].trim()) return j[k].trim();
+      }
+      if (typeof j.reasoning === 'string') {
+        const lineas = j.reasoning.split('\n').map((x) => x.trim()).filter((x) => x.length > 10);
+        const conNumero = lineas.filter((x) => /\d/.test(x));
+        if (conNumero.length) return conNumero[conNumero.length - 1];
+        if (lineas.length) return lineas[lineas.length - 1];
+      }
+    } catch (e) {}
+  }
+  return s;
+}
+
 // ---- Bienvenida a nuevos miembros ----
 const GRUPO_BIENVENIDA = 'General'; // nombre del grupo donde dar la bienvenida (grupo General de la comunidad RedLegion)
 let nombresGrupos = {}; // id del grupo -> nombre (se llena al conectar)
@@ -162,10 +184,10 @@ async function startBot() {
           const prompt = encodeURIComponent('Responde en español, de forma breve y amable (máximo 4 líneas). Pregunta: ' + pregunta);
           const ctrl = new AbortController();
           const timer = setTimeout(() => ctrl.abort(), 60000);
-          const res = await fetch('https://text.pollinations.ai/' + prompt, { signal: ctrl.signal });
+          const res = await fetch('https://text.pollinations.ai/' + prompt + '?model=openai', { signal: ctrl.signal });
           clearTimeout(timer);
           if (!res.ok) throw new Error('HTTP ' + res.status);
-          const respuesta = (await res.text()).trim();
+          const respuesta = extraerTextoIA(await res.text());
           reply = respuesta ? '🤖 ' + respuesta : '😅 La IA no me respondió, intenta de nuevo.';
         } catch (e) {
           console.log('⚠️ Error con la IA:', e.message);
