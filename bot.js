@@ -375,8 +375,17 @@ async function startBot() {
   // Dar la bienvenida cuando alguien se une al grupo
   sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
     try {
+      console.log(`👥 Evento grupo: ${action} en ${id}`);
       if (action !== 'add') return;
-      if (nombresGrupos[id] !== GRUPO_BIENVENIDA) return;
+      let nombre = nombresGrupos[id];
+      if (!nombre) {
+        try {
+          nombre = (await sock.groupMetadata(id)).subject;
+          nombresGrupos[id] = nombre;
+        } catch (e) { return; }
+      }
+      console.log(`👥 Grupo: "${nombre}"`);
+      if (nombre !== GRUPO_BIENVENIDA) return;
       for (const p of participants) {
         const tag = p.split('@')[0];
         await sock.sendMessage(id, {
