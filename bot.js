@@ -36,7 +36,34 @@ function extraerTextoIA(t) {
 
 // ---- Bienvenida a nuevos miembros ----
 const GRUPO_BIENVENIDA = 'General'; // nombre del grupo donde dar la bienvenida (grupo General de la comunidad RedLegion)
+// Grupos donde el bot está APAGADO del todo (no responde a nada). Escribe el nombre exacto del grupo.
+const GRUPOS_APAGADOS = [];
+const OFF_FILE = 'grupos-off.json';
+let gruposApagados = new Set(); // ids de grupos con el bot apagado (lista fija + comandos /bot)
 let nombresGrupos = {}; // id del grupo -> nombre (se llena al conectar)
+
+// Carga los grupos apagados: lista fija por nombre + los apagados con /bot off
+function cargarApagados() {
+  try {
+    gruposApagados = new Set(JSON.parse(fs.readFileSync(OFF_FILE, 'utf8')));
+  } catch (e) { gruposApagados = new Set(); }
+  for (const [gid, nombre] of Object.entries(nombresGrupos)) {
+    if (GRUPOS_APAGADOS.includes(nombre)) gruposApagados.add(gid);
+  }
+  console.log(`🔇 Grupos con bot apagado: ${gruposApagados.size}`);
+}
+function guardarApagados() {
+  try { fs.writeFileSync(OFF_FILE, JSON.stringify([...gruposApagados])); }
+  catch (e) { console.log('⚠️ No se pudo guardar la lista de apagados:', e.message); }
+}
+const normJid = (j) => (j || '').split(':')[0].split('@')[0];
+async function esAdminGrupo(sock, grupoId, senderJid) {
+  try {
+    const meta = await sock.groupMetadata(grupoId);
+    const s = normJid(senderJid);
+    return meta.participants.some((p) => normJid(p.id) === s && (p.admin === 'admin' || p.admin === 'superadmin'));
+  } catch (e) { return false; }
+}
 
 // Restaurar sesión desde SESSION_B64 si existe (sobrevive reinicios del servidor)
 function restoreSession() {
@@ -133,6 +160,7 @@ async function startBot() {
         const todos = await sock.groupFetchAllParticipating();
         for (const [gid, g] of Object.entries(todos)) nombresGrupos[gid] = g.subject;
         console.log(`📋 Grupos detectados: ${Object.keys(nombresGrupos).length}`);
+        cargarApagados();
       } catch (e) { console.log('⚠️ No se pudieron listar los grupos:', e.message); }
       // Mostrar respaldo de sesión para sobrevivir reinicios
       const backup = backupSession();
@@ -162,12 +190,42 @@ async function startBot() {
     const from = msg.key.remoteJid;
     // Responde a mensajes de otros, y a los tuyos solo en tu chat personal ("Tú")
     const isSelfChat = !!(msg.key.fromMe && sock.user && from === sock.user.id);
-    if (msg.key.fromMe && !isSelfChat) return;
-    // En el grupo de bienvenida los comandos están desactivados (solo bienvenida)
-    if (from.endsWith('@g.us') && nombresGrupos[from] === GRUPO_BIENVENIDA) return;
     const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').toLowerCase().trim();
     console.log(`💬 Mensaje de ${from}: ${text}`);
     if (!text) return;
+    const esGrupo = from.endsWith('@g.us');
+    const esToggle = text === '/bot off' || text === '/bot on';
+    // Ignora tus mensajes en otros chats, excepto los comandos /bot
+    if (msg.key.fromMe && !isSelfChat && !esToggle) return;
+
+    // /bot on|off — solo en grupos y solo administradores
+    if (esToggle) {
+      if (!esGrupo) {
+        await sock.sendMessage(from, { text: 'Este comando solo funciona en grupos.' });
+        return;
+      }
+      const sender = msg.key.participant || (msg.key.fromMe ? sock.user.id : from);
+      if (!(await esAdminGrupo(sock, from, sender))) {
+        await sock.sendMessage(from, { text: '⛔ Solo los administradores del grupo pueden usar este comando.' });
+        return;
+      }
+      if (text === '/bot off') {
+        gruposApagados.add(from);
+        guardarApagados();
+        await sock.sendMessage(from, { text: '🔴 Bot apagado en este grupo.' });
+      } else {
+        gruposApagados.delete(from);
+        guardarApagados();
+        await sock.sendMessage(from, { text: '🟢 Bot encendido en este grupo.' });
+      }
+      return;
+    }
+
+    // En grupos apagados el bot no responde a nada; en el grupo de bienvenida solo da la bienvenida (sin comandos)
+    if (esGrupo) {
+      if (gruposApagados.has(from)) return;
+      if (nombresGrupos[from] === GRUPO_BIENVENIDA) return;
+    }
 
     let reply = null;
     if (text === '/hola') {
@@ -212,6 +270,7 @@ async function startBot() {
         } catch (e) { return; }
       }
       console.log(`👥 Grupo: "${nombre}"`);
+      if (gruposApagados.has(id)) return;
       if (nombre !== GRUPO_BIENVENIDA) return;
       for (const p of participants) {
         const tag = p.split('@')[0];
