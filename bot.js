@@ -34,8 +34,9 @@ function extraerTextoIA(t) {
   return s;
 }
 
-// ---- IA: Gemini (principal, con clave gratis) + Pollinations (respaldo) ----
+// ---- IA: Gemini (principal) + Groq (respaldo 2) + Pollinations (respaldo 3) ----
 const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || '').trim();
+const GROQ_API_KEY = (process.env.GROQ_API_KEY || '').trim();
 const GEMINI_MODELOS = (process.env.GEMINI_MODEL || 'gemini-3.8-flash,gemini-3.5-flash').split(',').map((s) => s.trim()).filter(Boolean);
 
 async function fetchConTimeout(url, opciones, ms) {
@@ -62,35 +63,66 @@ async function preguntarIA(pregunta) {
   }
   const prompt = 'Responde en español, de forma breve y amable (máximo 4 líneas). Nunca uses marcadores de posición como [insertar...]. Pregunta: ' + contexto + pregunta;
 
-  // 1) Gemini (gratis con API key)
+  // 1) Gemini (gratis con API key) — 2 intentos por modelo
   if (GEMINI_API_KEY) {
     for (const modelo of GEMINI_MODELOS) {
-      try {
-        const res = await fetchConTimeout(
-          'https://generativelanguage.googleapis.com/v1beta/models/' + modelo + ':generateContent',
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { maxOutputTokens: 2000, temperature: 0.7 }
-            })
-          },
-          60000
-        );
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        const partes = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts;
-        const texto = partes ? partes.map((p) => p.text || '').join('').trim() : '';
-        if (texto) return texto;
-        throw new Error('Sin respuesta');
-      } catch (e) {
-        console.log(`⚠️ Gemini (${modelo}):`, e.message);
+      for (let intento = 0; intento < 2; intento++) {
+        try {
+          const res = await fetchConTimeout(
+            'https://generativelanguage.googleapis.com/v1beta/models/' + modelo + ':generateContent',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { maxOutputTokens: 2000, temperature: 0.7 }
+              })
+            },
+            45000
+          );
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          const partes = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts;
+          const texto = partes ? partes.map((p) => p.text || '').join('').trim() : '';
+          if (texto) return texto;
+          throw new Error('Sin respuesta');
+        } catch (e) {
+          console.log(`⚠️ Gemini (${modelo}) intento ${intento + 1}:`, e.message);
+        }
       }
     }
   }
 
-  // 2) Respaldo: Pollinations gratis (2 intentos)
+  // 2) Groq (gratis con API key) — 2 intentos
+  if (GROQ_API_KEY) {
+    for (let intento = 0; intento < 2; intento++) {
+      try {
+        const res = await fetchConTimeout(
+          'https://api.groq.com/openai/v1/chat/completions',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_API_KEY },
+            body: JSON.stringify({
+              model: 'llama-3.3-70b-versatile',
+              messages: [{ role: 'user', content: prompt }],
+              max_tokens: 600,
+              temperature: 0.7
+            })
+          },
+          45000
+        );
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const texto = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+        if (texto && texto.trim()) return texto.trim();
+        throw new Error('Sin respuesta');
+      } catch (e) {
+        console.log(`⚠️ Groq intento ${intento + 1}:`, e.message);
+      }
+    }
+  }
+
+  // 3) Respaldo: Pollinations gratis (2 intentos)
   for (let intento = 0; intento < 2; intento++) {
     try {
       const res = await fetchConTimeout(
