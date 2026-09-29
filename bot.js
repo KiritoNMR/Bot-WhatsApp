@@ -62,7 +62,7 @@ async function preguntarIA(pregunta) {
             headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
             body: JSON.stringify({
               contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { maxOutputTokens: 400, temperature: 0.7 }
+              generationConfig: { maxOutputTokens: 2000, temperature: 0.7 }
             })
           },
           60000
