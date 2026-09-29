@@ -310,7 +310,7 @@ async function startBot() {
     if (text === '/hola') {
       reply = '👋 ¡Hola! Soy Kaneki. Escribe */ayuda* para ver qué puedo hacer.';
     } else if (text === '/ayuda') {
-      reply = '📋 Comandos:\n• */hola* - Saludar\n• */ia <pregunta>* - Pregúntame lo que quieras\n• */ayuda* - Este mensaje\n\n💬 En privado puedes escribirme normal y te respondo con IA sin usar /ia';
+      reply = '📋 Comandos:\n• */hola* - Saludar\n• */ia <pregunta>* - Pregúntame lo que quieras\n• */ayuda* - Este mensaje';
     } else if (text === '/ia' || text.startsWith('/ia ')) {
       const pregunta = text.slice(3).trim();
       if (!pregunta) {
@@ -324,16 +324,6 @@ async function startBot() {
           console.log('⚠️ Error con la IA:', e.message);
           reply = '😅 No pude contactar a la IA ahora mismo, intenta en un momento.';
         }
-      }
-    } else if (!esGrupo) {
-      // En chats privados, cualquier mensaje va directo a la IA (sin /ia)
-      try {
-        await sock.sendPresenceUpdate('composing', from);
-        const respuesta = await preguntarIA(text);
-        reply = respuesta ? '🤖 ' + respuesta : '😅 No pude contactar a la IA ahora mismo, intenta en un momento.';
-      } catch (e) {
-        console.log('⚠️ Error con la IA (directo):', e.message);
-        reply = '😅 No pude contactar a la IA ahora mismo, intenta en un momento.';
       }
     }
 
