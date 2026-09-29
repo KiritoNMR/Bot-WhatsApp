@@ -49,7 +49,18 @@ async function fetchConTimeout(url, opciones, ms) {
 }
 
 async function preguntarIA(pregunta) {
-  const prompt = 'Responde en español, de forma breve y amable (máximo 4 líneas). Pregunta: ' + pregunta;
+  // Si preguntan hora/fecha, inyectamos el dato real de Cuba para que no invente ni use marcadores
+  let contexto = '';
+  const ql = pregunta.toLowerCase();
+  if (ql.includes('hora') || ql.includes('fecha') || ql.includes('qué día') || ql.includes('que dia') || ql.includes('hoy')) {
+    try {
+      const ahora = new Date();
+      const horaCu = new Intl.DateTimeFormat('es-CU', { timeZone: 'America/Havana', hour: '2-digit', minute: '2-digit' }).format(ahora);
+      const fechaCu = new Intl.DateTimeFormat('es-CU', { timeZone: 'America/Havana', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(ahora);
+      contexto = 'Dato real: hoy es ' + fechaCu + ' y la hora actual en Cuba es ' + horaCu + '. Úsalo para responder. ';
+    } catch (e) {}
+  }
+  const prompt = 'Responde en español, de forma breve y amable (máximo 4 líneas). Nunca uses marcadores de posición como [insertar...]. Pregunta: ' + contexto + pregunta;
 
   // 1) Gemini (gratis con API key)
   if (GEMINI_API_KEY) {
@@ -299,7 +310,7 @@ async function startBot() {
     if (text === '/hola') {
       reply = '👋 ¡Hola! Soy Kaneki. Escribe */ayuda* para ver qué puedo hacer.';
     } else if (text === '/ayuda') {
-      reply = '📋 Comandos:\n• */hola* - Saludar\n• */ia <pregunta>* - Pregúntame lo que quieras\n• */ayuda* - Este mensaje';
+      reply = '📋 Comandos:\n• */hola* - Saludar\n• */ia <pregunta>* - Pregúntame lo que quieras\n• */ayuda* - Este mensaje\n\n💬 En privado puedes escribirme normal y te respondo con IA sin usar /ia';
     } else if (text === '/ia' || text.startsWith('/ia ')) {
       const pregunta = text.slice(3).trim();
       if (!pregunta) {
@@ -313,6 +324,16 @@ async function startBot() {
           console.log('⚠️ Error con la IA:', e.message);
           reply = '😅 No pude contactar a la IA ahora mismo, intenta en un momento.';
         }
+      }
+    } else if (!esGrupo) {
+      // En chats privados, cualquier mensaje va directo a la IA (sin /ia)
+      try {
+        await sock.sendPresenceUpdate('composing', from);
+        const respuesta = await preguntarIA(text);
+        reply = respuesta ? '🤖 ' + respuesta : '😅 No pude contactar a la IA ahora mismo, intenta en un momento.';
+      } catch (e) {
+        console.log('⚠️ Error con la IA (directo):', e.message);
+        reply = '😅 No pude contactar a la IA ahora mismo, intenta en un momento.';
       }
     }
 
