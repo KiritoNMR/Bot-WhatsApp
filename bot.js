@@ -253,12 +253,15 @@ async function startBot() {
     const msg = messages[0];
     if (!msg.message) return;
     const from = msg.key.remoteJid;
-    // Responde a mensajes de otros, y a los tuyos solo en tu chat personal ("Tú")
-    const isSelfChat = !!(msg.key.fromMe && sock.user && normJid(from) === normJid(sock.user.id));
-    const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').toLowerCase().trim();
-    console.log(`💬 Mensaje de ${from}: ${text}`);
-    if (!text) return;
     const esGrupo = from.endsWith('@g.us');
+    // Responde a mensajes de otros, y a los tuyos solo en tu chat personal ("Tú")
+    // WhatsApp usa @lid además de tu número: se comparan ambas identidades
+    const yoIds = sock.user ? [sock.user.id, sock.user.lid].filter(Boolean).map(normJid) : [];
+    const chatIds = [from, msg.key.remoteJidAlt].filter(Boolean).map(normJid);
+    const isSelfChat = !!(msg.key.fromMe && !esGrupo && chatIds.some((c) => yoIds.includes(c)));
+    const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').toLowerCase().trim();
+    console.log(`💬 Mensaje de ${from} (alt: ${msg.key.remoteJidAlt || '-'}, yo: ${yoIds.join(',')}, selfChat: ${isSelfChat}): ${text}`);
+    if (!text) return;
     const esToggle = text === '/bot off' || text === '/bot on';
     // Ignora tus mensajes en otros chats, excepto los comandos /bot
     if (msg.key.fromMe && !isSelfChat && !esToggle) return;
