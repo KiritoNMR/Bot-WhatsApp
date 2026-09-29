@@ -254,7 +254,7 @@ async function startBot() {
     if (!msg.message) return;
     const from = msg.key.remoteJid;
     // Responde a mensajes de otros, y a los tuyos solo en tu chat personal ("Tú")
-    const isSelfChat = !!(msg.key.fromMe && sock.user && from === sock.user.id);
+    const isSelfChat = !!(msg.key.fromMe && sock.user && normJid(from) === normJid(sock.user.id));
     const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').toLowerCase().trim();
     console.log(`💬 Mensaje de ${from}: ${text}`);
     if (!text) return;
