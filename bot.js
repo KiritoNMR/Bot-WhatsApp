@@ -34,6 +34,71 @@ function extraerTextoIA(t) {
   return s;
 }
 
+// ---- IA: Gemini (principal, con clave gratis) + Pollinations (respaldo) ----
+const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || '').trim();
+const GEMINI_MODELOS = (process.env.GEMINI_MODEL || 'gemini-3.8-flash,gemini-3.5-flash').split(',').map((s) => s.trim()).filter(Boolean);
+
+async function fetchConTimeout(url, opciones, ms) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, Object.assign({}, opciones, { signal: ctrl.signal }));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function preguntarIA(pregunta) {
+  const prompt = 'Responde en español, de forma breve y amable (máximo 4 líneas). Pregunta: ' + pregunta;
+
+  // 1) Gemini (gratis con API key)
+  if (GEMINI_API_KEY) {
+    for (const modelo of GEMINI_MODELOS) {
+      try {
+        const res = await fetchConTimeout(
+          'https://generativelanguage.googleapis.com/v1beta/models/' + modelo + ':generateContent',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { maxOutputTokens: 400, temperature: 0.7 }
+            })
+          },
+          60000
+        );
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const partes = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts;
+        const texto = partes ? partes.map((p) => p.text || '').join('').trim() : '';
+        if (texto) return texto;
+        throw new Error('Sin respuesta');
+      } catch (e) {
+        console.log(`⚠️ Gemini (${modelo}):`, e.message);
+      }
+    }
+  }
+
+  // 2) Respaldo: Pollinations gratis (2 intentos)
+  for (let intento = 0; intento < 2; intento++) {
+    try {
+      const res = await fetchConTimeout(
+        'https://text.pollinations.ai/' + encodeURIComponent(prompt) + '?model=openai',
+        {},
+        60000
+      );
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const texto = extraerTextoIA(await res.text());
+      if (texto) return texto;
+      throw new Error('Sin respuesta');
+    } catch (e) {
+      console.log(`⚠️ Pollinations (intento ${intento + 1}):`, e.message);
+      if (intento === 0) await sleep(3000);
+    }
+  }
+  return null;
+}
+
 // ---- Bienvenida a nuevos miembros ----
 const GRUPO_BIENVENIDA = 'General'; // nombre del grupo donde dar la bienvenida (grupo General de la comunidad RedLegion)
 // Grupos donde el bot está APAGADO del todo (no responde a nada). Escribe el nombre exacto del grupo.
@@ -239,24 +304,8 @@ async function startBot() {
       } else {
         try {
           await sock.sendPresenceUpdate('composing', from);
-          const prompt = encodeURIComponent('Responde en español, de forma breve y amable (máximo 4 líneas). Pregunta: ' + pregunta);
-          let respuesta = '';
-          let ok = false;
-          for (let intento = 0; intento < 2 && !ok; intento++) {
-            try {
-              const ctrl = new AbortController();
-              const timer = setTimeout(() => ctrl.abort(), 60000);
-              const res = await fetch('https://text.pollinations.ai/' + prompt + '?model=openai', { signal: ctrl.signal });
-              clearTimeout(timer);
-              if (!res.ok) throw new Error('HTTP ' + res.status);
-              respuesta = extraerTextoIA(await res.text());
-              ok = true;
-            } catch (e) {
-              console.log(`⚠️ Error con la IA (intento ${intento + 1}):`, e.message);
-              if (intento === 0) await sleep(3000);
-            }
-          }
-          reply = ok && respuesta ? '🤖 ' + respuesta : '😅 No pude contactar a la IA ahora mismo, intenta en un momento.';
+          const respuesta = await preguntarIA(pregunta);
+          reply = respuesta ? '🤖 ' + respuesta : '😅 No pude contactar a la IA ahora mismo, intenta en un momento.';
         } catch (e) {
           console.log('⚠️ Error con la IA:', e.message);
           reply = '😅 No pude contactar a la IA ahora mismo, intenta en un momento.';
